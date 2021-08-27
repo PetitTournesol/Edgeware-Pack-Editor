@@ -7,7 +7,7 @@ from tkinter import Tk, ttk, simpledialog, filedialog, messagebox
 PATH = str(pathlib.Path(__file__).parent.absolute())
 os.chdir(PATH)
 
-LOCAL_VERSION = '0.0.0_DEV'
+LOCAL_VERSION = '1.0.0'
 
 JSON_FILE_NAMES = ['web', 'prompt', 'captions']
 NONJSON_FILE_NAMES = ['discord.dat']
@@ -24,7 +24,6 @@ class Pack:
 
         #default assets
         
-        #text resources
         self.defaultWebList        = {'urls':['https://www.google.com/'], 'args':['']}
         self.defaultCaptionList    = {'prefix':[], 'default':[], 'subtext':'I Submit <3'}
         self.defaultPromptList     = {'moods':['default'], 'subtext':'I Submit <3', 'freqList':[100], 'minLen':1, 'maxLen':1, 'default':['default']}
@@ -38,7 +37,7 @@ class Pack:
                                'aud':[],
                                'img':[],
                                'vid':[],
-                               'discord':['Playing with myself~', '']}
+                               'discord':'Playing with myself~'}
 
     def importPack(self, path) -> bool:
         try:
@@ -47,24 +46,35 @@ class Pack:
             #import all json file data
             for fileName in JSON_FILE_NAMES:
                 print('importing', fileName)
-                fullPath = os.path.join(path, fileName + '.json')
-                with open(fullPath, 'r') as file:
-                    self.resourceDict[fileName] = json.loads(file.read())
+                try:
+                    fullPath = os.path.join(path, fileName + '.json')
+                    with open(fullPath, 'r') as file:
+                        self.resourceDict[fileName] = json.loads(file.read())
+                except:
+                    print('failed to import', fileName)
 
             print('importing wallpapers')
             for maybeWallpaper in os.listdir(path):
-                self.resourceDict['wallpapers'].append(os.path.join(path, maybeWallpaper)) if [maybeWallpaper.endswith(ext) for ext in WALL_FILE_TYPES].count(True) > 0 else ''#print('passed', maybeWallpaper)
-
-            #discord data, split by newline; allows integration of text AND image selection
+                try:
+                    self.resourceDict['wallpapers'].append(os.path.join(path, maybeWallpaper)) if [maybeWallpaper.endswith(ext) for ext in WALL_FILE_TYPES].count(True) > 0 else ''#print('passed', maybeWallpaper)
+                except Exception as e:
+                    print(e)
+                
             print('importing discord.dat')
-            with open(os.path.join(path, 'discord.dat')) as file:
-                self.resourceDict['discord'] = [line.replace('\n', '') for line in file.readlines()]
+            try:
+                with open(os.path.join(path, 'discord.dat')) as file:
+                    self.resourceDict['discord'] = file.readline().replace('\n', '')
+            except:
+                print('failed to import discord.dat')
             
             #resource path importing
             for media in MEDIA_TYPES:
                 print('importing', media)
-                self.resourceDict[media] = [os.path.join(path, media, obj) for obj in os.listdir(os.path.join(path, media))]
-            
+                try:
+                    self.resourceDict[media] = [os.path.join(path, media, obj) for obj in os.listdir(os.path.join(path, media))]
+                except:
+                    print('failed to import', media, 'media')
+
             print('import done!')
             return True
         except Exception as e:
@@ -79,9 +89,23 @@ class Pack:
             #build new path with pack name as its storage directory with subfolders (if not present)
             namedPath = os.path.join(path, name)
             if not os.path.exists(namedPath):
+                print('created path')
                 os.mkdir(namedPath)
             for media in MEDIA_TYPES:
+                print('created /', media, '/', sep='')
                 os.mkdir(os.path.join(namedPath, media)) if not os.path.exists(os.path.join(namedPath, media)) else ''
+            
+            #can be removed after next edgeware update probably
+            print('applying caption fix')
+            prefixSet = []
+            for prefix in list(pack.resourceDict['captions'].keys()):
+                prefixSet.append(prefixSet.append(prefix)) if not str(prefix) in ['default', 'prefix', 'subtext'] else ''
+            try:
+                while True:
+                    prefixSet.remove(None)
+            except:
+                pass
+            pack.resourceDict['captions']['prefix'] = prefixSet
 
             #saving json files
             print('saving json/text files')
@@ -89,7 +113,7 @@ class Pack:
                 with open(os.path.join(namedPath, fileName + '.json'), 'w') as file:
                     file.write(json.dumps(self.resourceDict[fileName]))
             with open(os.path.join(namedPath, 'discord.dat'), 'w') as file:
-                file.writelines(self.resourceDict['discord'])
+                file.write(self.resourceDict['discord'])
             
             #copying audio/images/video from various sources into the final pack destination
             #   should not copy if already present
@@ -135,13 +159,13 @@ def showWindow() -> str:
     root = Tk()
     root.title('Edgeware Pack Editor')
     root.geometry('800x600')
-    root.iconbitmap(os.path.join(PATH, 'editor_assets', 'default_icon.ico'))
+    #root.iconbitmap(os.path.join(PATH, 'editor_assets', 'default_icon.ico'))
 
     menuBar = Menu(root)
     root.config(menu=menuBar)
 
     fileMenu = Menu(menuBar)
-    fileMenu.add_command(label='New', command=lambda:menuNew(True))
+    fileMenu.add_command(label='New (Ctrl+N)', command=lambda:menuNew(True))
     def menuNew(isNew):
         global pack
         pack = Pack()
@@ -154,13 +178,18 @@ def showWindow() -> str:
         resetTree(webTree, ['urls', 'args'])
         changeEntryText(subTextBox, 'I Submit <3')
         changeEntryText(subTextBox_Prompt, 'I Submit <3')
+        packNameLabel.config(text='Unnamed Edgeware Pack')
+        packDiscordLabel.config(text=pack.resourceDict['discord'])
         if isNew:
             fullAddTree_Prompts(promptTree)
             fullAddTree(captionTree)
-    fileMenu.add_command(label='Open', command=lambda:menuOpen())
-    def menuOpen():
+    fileMenu.add_command(label='Open (Ctrl+O)', command=lambda:menuOpen('manual_select'))
+    def menuOpen(openPath_):
         global pack, heldSavePath, hasBeenSaved
-        openDir = filedialog.askdirectory().replace('/', '\\')
+        if openPath_ == 'manual_select':
+            openDir = filedialog.askdirectory(title='Open Pack Folder').replace('/', '\\')
+        else:
+            openDir = openPath_
         print(openDir)
         if not openDir == '' and not openDir == None:
             menuNew(False)
@@ -189,20 +218,20 @@ def showWindow() -> str:
             except:
                 ''
             packNameLabel.config(text=pack.name)
-            packDiscordLabel.config(text=pack.resourceDict['discord'][0])
+            packDiscordLabel.config(text=pack.resourceDict['discord'])
             
-    fileMenu.add_command(label='Save', command=lambda:save())
+    fileMenu.add_command(label='Save (Ctrl+S)', command=lambda:save())
 
     def save() -> bool:
         if not hasBeenSaved:
             return saveAs()
         return pack.export(heldSavePath, '')
 
-    fileMenu.add_command(label='Save As', command=lambda:saveAs())
+    fileMenu.add_command(label='Save As (Ctrl+Shift+S)', command=lambda:saveAs())
 
     def saveAs() -> bool:
         global heldSavePath
-        openDir = filedialog.askdirectory().replace('/', '\\')
+        openDir = filedialog.askdirectory(title='Save Pack Folder As').replace('/', '\\')
         print(openDir)
         if not openDir == '' and not openDir == None:
             heldSavePath = openDir
@@ -210,16 +239,31 @@ def showWindow() -> str:
         else:
             return False
 
+    
+    fileMenu.add_command(label='Import Zip', command=lambda:importZip())
+
+    def importZip():
+        zipPath = unpackZip()
+        if zipPath != '':
+            menuOpen(zipPath)
+
+
     fileMenu.add_command(label='Export Zip', command=lambda:exportZip())
 
     def exportZip():
         save()
         exportResource()
 
-    fileMenu.add_command(label='Exit')
+    fileMenu.add_command(label='Exit', command=lambda: os.kill(os.getpid(), 9))
 
     menuBar.add_cascade(label='File', menu=fileMenu)
     
+    root.focus_set()
+    root.bind('<Control-n>', lambda key: menuNew(False))
+    root.bind('<Control-s>', lambda key: save())
+    root.bind('<Control-Shift-S>', lambda key: saveAs())
+    root.bind('<Control-o>', lambda key: menuOpen())
+
     tabMaster       = ttk.Notebook(root)
     tabGeneral      = ttk.Frame(None)
     tabMedia        = ttk.Frame(None)
@@ -234,24 +278,30 @@ def showWindow() -> str:
     Label(generalLeftFrame, text='Pack Info').pack()
     packNameFrame = Frame(generalLeftFrame, borderwidth=2, relief=RAISED)
     packNameLabel = Label(packNameFrame, text=pack.name)
-    packRenameButton = Button(packNameFrame, text='Rename', command=lambda: renamePack())
-    def renamePack():
-        newName = simpledialog.askstring('Rename', 'New Pack Name')
-        if newName != '' and newName != None:
-            pack.name = newName
-            packNameLabel.config(text=newName)
+    #packRenameButton = Button(packNameFrame, text='Rename', command=lambda: renamePack())
+    #def renamePack():
+    #    newName = simpledialog.askstring('Rename', 'New Pack Name')
+    #    if newName != '' and newName != None:
+    #        pack.name = newName
+    #        packNameLabel.config(text=newName)
     
     packDiscordFrame = Frame(generalLeftFrame, borderwidth=4, relief=RAISED)
-    packDiscordLabel = Label(packDiscordFrame, text=pack.resourceDict['discord'][0])
+    packDiscordLabel = Label(packDiscordFrame, text=pack.resourceDict['discord'])
     packUpdDiscButton = Button(packDiscordFrame, text='Edit', command=lambda: updateDisc())
     def updateDisc():
-        newStat = simpledialog.askstring('Update', 'From: "' + pack.resourceDict['discord'][0] + '"\nNew:')
+        newStat = simpledialog.askstring('Update', 'From: "' + pack.resourceDict['discord'] + '"\nNew:')
         if newStat != '' and newStat != None:
-            pack.resourceDict['discord'][0] = newStat
+            pack.resourceDict['discord'] = newStat
             packDiscordLabel.config(text=newStat)
 
     generalRightFrame = Frame(tabGeneral, borderwidth=4, relief=RAISED)
     Label(generalRightFrame, text='Client Info').pack()
+    
+    versionInfoLabel = Label(generalRightFrame, text='Editor Version '+  LOCAL_VERSION)
+
+    hotkeyInfo = '\tPrompt/Web Hotkeys\n\t\tDelete: deletes currently selected term\n\t\tC: Add a new category (category, mood, url)\n\t\tV: Add a new option to the selected category\n\t\tE: Edit the content of current selection\n\n\n\tMedia Hotkeys\n\t\tDelete: Deletes currently selected asset\n\t\tDouble Click/Enter: Previews the currently selected asset'
+
+    hotkeyLabel = Label(generalRightFrame, foreground='darkgray', text=hotkeyInfo, relief='ridge')
 
     generalLeftFrame.pack(side='left', fill='both', expand=1)
 
@@ -259,8 +309,8 @@ def showWindow() -> str:
     dummyFrame1.pack(fill='x')
     Label(dummyFrame1, text='Pack Name').pack(side='left')
     packNameFrame.pack(fill='x')
-    packNameLabel.pack(side='left', fill='x', expand=1)
-    packRenameButton.pack(side='left', fill='x')
+    packNameLabel.pack(side='top', fill='x', expand=1)
+    #packRenameButton.pack(side='left', fill='x')
 
     dummyFrame2 = Frame(generalLeftFrame)
     dummyFrame2.pack(fill='x')
@@ -270,6 +320,9 @@ def showWindow() -> str:
     packUpdDiscButton.pack(side='right', fill='x')
 
     generalRightFrame.pack(side='right', fill='both', expand=1)
+    versionInfoLabel.pack()
+    Label(generalRightFrame).pack()
+    hotkeyLabel.pack(fill='x')
 
     #<===================================={END GENERAL}====================================>
 
@@ -280,24 +333,28 @@ def showWindow() -> str:
     Label(audFrame, text='Audio', borderwidth=2, relief=RAISED).pack(side='top', fill='x')
     audListBox = Listbox(audFrame)
     audListBox.bind('<Double-Button>', lambda key: os.startfile(pack.resourceDict['aud'][audListBox.curselection()[0]]))
+    audListBox.bind('<Return>', lambda key: os.startfile(pack.resourceDict['aud'][audListBox.curselection()[0]]))
     audListBox.bind('<Delete>', lambda key: removeList(audListBox, 'aud'))
 
     imgFrame = Frame(tabMedia, borderwidth=4, relief=RAISED)
     Label(imgFrame, text='Images', borderwidth=2, relief=RAISED).pack(side='top', fill='x')
     imgListBox = Listbox(imgFrame)
     imgListBox.bind('<Double-Button>', lambda key: os.startfile(pack.resourceDict['img'][imgListBox.curselection()[0]]))
+    imgListBox.bind('<Return>', lambda key: os.startfile(pack.resourceDict['img'][imgListBox.curselection()[0]]))
     imgListBox.bind('<Delete>', lambda key: removeList(imgListBox, 'img'))
 
     vidFrame = Frame(tabMedia, borderwidth=4, relief=RAISED)
     Label(vidFrame, text='Videos', borderwidth=2, relief=RAISED).pack(side='top', fill='x')
     vidListBox = Listbox(vidFrame)
     vidListBox.bind('<Double-Button>', lambda key: os.startfile(pack.resourceDict['vid'][vidListBox.curselection()[0]]))
+    vidListBox.bind('<Return>', lambda key: os.startfile(pack.resourceDict['vid'][vidListBox.curselection()[0]]))
     vidListBox.bind('<Delete>', lambda key: removeList(vidListBox, 'vid'))
 
     wallpaperFrame = Frame(tabMedia, borderwidth=4, relief=RAISED)
     Label(wallpaperFrame, text='Wallpapers', borderwidth=2, relief=RAISED).pack(side='top', fill='x')
     wPaperListBox = Listbox(wallpaperFrame)
     wPaperListBox.bind('<Double-Button>', lambda key: os.startfile(pack.resourceDict['wallpapers'][wPaperListBox.curselection()[0]]))
+    wPaperListBox.bind('<Return>', lambda key: os.startfile(pack.resourceDict['wallpapers'][wPaperListBox.curselection()[0]]))
     wPaperListBox.bind('<Delete>', lambda key: removeList(wPaperListBox, 'wallpapers'))
 
     #control buttons (aud => img => vid)
@@ -375,7 +432,12 @@ def showWindow() -> str:
     tabMaster.add(tabCaptions, text='Captions')
 
     captionTree = ttk.Treeview(tabCaptions)
-    captionTree.bind('<Delete>', lambda button: removeTree(captionTree, captionTree.selection()[0], 'captions'))
+
+    captionTree.focus_set()
+    captionTree.bind('<Delete>', lambda key: removeTree(captionTree, captionTree.selection()[0], 'captions'))
+    captionTree.bind('<c>', lambda key: addTree(captionTree, simpledialog.askstring('Category Name', 'Name of new category:'), True, 'captions'))
+    captionTree.bind('<v>', lambda key: addTree(captionTree, simpledialog.askstring('Caption Text', 'Text for caption:'), False, 'captions'))
+    captionTree.bind('<e>', lambda key: editTree(captionTree, captionTree.selection()[0], simpledialog.askstring('New Text', 'Updated caption:'), 'captions'))
 
     fullAddTree(captionTree)
 
@@ -389,6 +451,7 @@ def showWindow() -> str:
         lambda: editTree(captionTree, captionTree.selection()[0], simpledialog.askstring('New Text', 'Updated caption:'), 'captions'))
     removeItem = Button(capOperatorPane, text='Delete Selected', command=
         lambda: removeTree(captionTree, captionTree.selection()[0], 'captions'))
+
 
     subTextBox = Entry(capOperatorPane)
     try:
@@ -416,7 +479,11 @@ def showWindow() -> str:
     tabMaster.add(tabPrompts, text='Prompts')
 
     promptTree = ttk.Treeview(tabPrompts)
-    promptTree.bind('<Delete>', lambda button: removeTree(promptTree, promptTree.selection()[0], 'prompt'))
+    promptTree.focus_set()
+    promptTree.bind('<Delete>', lambda key: removeTree(promptTree, promptTree.selection()[0], 'prompt'))
+    promptTree.bind('<c>', lambda key: addTree(promptTree, simpledialog.askstring('Mood Name', 'Name of new mood:'), True, 'prompt'))
+    promptTree.bind('<v>', lambda key: addTree(promptTree, simpledialog.askstring('Asset Text', 'Text for asset:'), False, 'prompt'))
+    promptTree.bind('<e>', lambda key: editTree(promptTree, promptTree.selection()[0], simpledialog.askstring('New Text', 'Updated asset:'), 'prompt'))
 
     fullAddTree_Prompts(promptTree)
 
@@ -477,8 +544,15 @@ def showWindow() -> str:
     tabMaster.add(tabWeb, text='Web')
 
     webTree = ttk.Treeview(tabWeb)
-    fullAddTree_Web(webTree)
+
+    webTree.focus_set()
+    webTree.bind('<Delete>', lambda key: removeWeb())
+    webTree.bind('<c>', lambda key: addWeb(simpledialog.askstring('URL Arg', 'Base of link to use:'), True))
+    webTree.bind('<v>', lambda key: addWeb(simpledialog.askstring('URL Arg', 'Base of link to use:'), True))
+    webTree.bind('<e>', lambda key: editWeb(simpledialog.askstring('New Text', 'Updated arg:')))
+
     #good god why did i do the web.json like i did it's so fucking bad
+    fullAddTree_Web(webTree)
 
     webOperatorPane = Frame(tabWeb, borderwidth=4, relief=RAISED)
     Label(webOperatorPane, text='                ').pack(fill='x')
@@ -560,11 +634,12 @@ def fullAddTree(tkTreeObj):
         'just ignore it lmao i know how stupid i am'
     for caption in pack.resourceDict['captions']['default']:
         tkTreeObj.insert('default', 'end', caption, text=caption)
-    
-    for prefix in pack.resourceDict['captions']['prefix']:
+    for prefix in list(pack.resourceDict['captions'].keys()):
+        if prefix == 'default' or prefix == 'subtext':
+            continue
         tkTreeObj.insert('', 'end', prefix, text=prefix)
         for caption in pack.resourceDict['captions'][prefix]:
-            tkTreeObj.insert(prefix, 'end', caption, text=caption)
+            tkTreeObj.insert(prefix, 'end', text=caption)
             
 def fullAddTree_Web(tkTreeObj):
     try:
@@ -623,7 +698,10 @@ def removeTree(tkTreeObj, key, dictKey):
     #determine if category vs caption was deleted
     if tkTreeObj.parent(key) == '':
         if dictKey == 'prompt':
-            pack.resourceDict['prompt']['freqList'].pop(pack.resourceDict['prompt']['moods'].index(tkTreeObj.item(key)['text']))
+            try:
+                pack.resourceDict['prompt']['freqList'].pop(pack.resourceDict['prompt']['moods'].index(tkTreeObj.item(key)['text']))
+            except:
+                tkTreeObj.delete(key)
         pack.resourceDict[dictKey].pop(tkTreeObj.item(key)['text'])
     else:
         pack.resourceDict[dictKey][tkTreeObj.item(tkTreeObj.parent(key))['text']].remove(tkTreeObj.item(key)['text'])
@@ -646,7 +724,7 @@ def resetTree(tkTreeObj, ignoreList):
 
 def addList(tkListObj, key, autoState, optPath):
     if not autoState:
-        path_ = filedialog.askopenfilenames()
+        path_ = filedialog.askopenfilenames(title='Select ' + key + ' file(s)')
         if(len(path_) > 0 and path_ != None):
             for path in path_:
                 print(path)
@@ -675,11 +753,16 @@ def resetList(tkListObj, key):
 #:) i am very creative yes
 def exportResource():
     try:
-        saveLocation = filedialog.asksaveasfile('w', defaultextension ='.zip')
+        saveLocation = filedialog.asksaveasfile('w', title='Save Zip Location', defaultextension ='zip')
+        print('starting save to', saveLocation)
         with zipfile.ZipFile(saveLocation.name.replace('/', '\\'), 'w', compression=zipfile.ZIP_DEFLATED) as zip:
             beyondRoot = False
             for root, dirs, files in os.walk(heldSavePath.replace('/', '\\')):
                 for obj in files:
+                    if obj.endswith('.zip'):
+                        print('skipped packing zip file')
+                        continue
+                    print('packing', os.path.join(root, obj))
                     if beyondRoot:
                         zip.write(os.path.join(root, obj), root.split('\\')[len(root.split('\\')) - 1] + '\\' + obj)
                     else:
@@ -687,8 +770,21 @@ def exportResource():
                 for dir in dirs:
                     zip.write(os.path.join(root, dir), '\\' + dir + '\\')
                 beyondRoot = True
+        print('zip file write completed')
     except:
         messagebox.showerror('Write Error', 'Failed to export resource to zip file.')
+
+def unpackZip() -> str:
+    try:
+        zipPath = filedialog.askopenfile('r', title='Unpack Zip', defaultextension ='zip').name.replace('/', '\\')
+        print('attempted to unpack', zipPath, '\n\tthis may take some time...')
+        with zipfile.ZipFile(zipPath, 'r') as obj:
+            obj.extractall(os.path.join(PATH, zipPath.split('\\').pop().split('.')[0]))
+        print('unpacking done')
+        return os.path.join(PATH, zipPath.split('\\').pop().split('.')[0])
+    except:
+        print('failed to unpack zip')
+        return ''
 
 pack = Pack()
 showWindow()
