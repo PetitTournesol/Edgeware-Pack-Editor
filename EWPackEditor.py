@@ -7,7 +7,7 @@ from tkinter import Tk, ttk, simpledialog, filedialog, messagebox
 PATH = str(pathlib.Path(__file__).parent.absolute())
 os.chdir(PATH)
 
-LOCAL_VERSION = '1.0.0'
+LOCAL_VERSION = '1.1.0'
 
 JSON_FILE_NAMES = ['web', 'prompt', 'captions']
 NONJSON_FILE_NAMES = ['discord.dat']
@@ -87,7 +87,8 @@ class Pack:
         try:
             print('starting export...')
             #build new path with pack name as its storage directory with subfolders (if not present)
-            namedPath = os.path.join(path, name)
+            namedPath = os.path.join(path, name).replace('/', '\\')
+            print('exporting to', namedPath)
             if not os.path.exists(namedPath):
                 print('created path')
                 os.mkdir(namedPath)
@@ -119,23 +120,25 @@ class Pack:
             #   should not copy if already present
             print('aggregating wallpapers')
             for wallpaper in self.resourceDict['wallpapers']:
+                wallpaper = wallpaper.replace('/', '\\')
                 dest = os.path.join(namedPath, wallpaper.split('\\').pop())
                 if not os.path.exists(dest):
                     print('copying wallpaper', wallpaper)
-                    shutil.copyfile(wallpaper, os.path.join(namedPath, wallpaper.split('\\').pop()))
+                    shutil.copyfile(wallpaper, os.path.join(namedPath, wallpaper.split('\\').pop()), follow_symlinks=True)
 
             for media in MEDIA_TYPES:
                 print('aggregating', media)
                 for mediaFile in self.resourceDict[media]:
+                    mediaFile = mediaFile.replace('/', '\\')
                     dest = os.path.join(namedPath, media, mediaFile.split('\\').pop())
                     if not os.path.exists(dest):
-                        print('copying', mediaFile)
-                        shutil.copyfile(mediaFile, dest)
+                        print('copying', mediaFile, 'to', dest)
+                        print(shutil.copyfile(mediaFile, dest, follow_symlinks=True))
 
             #cleaning pass to make sure no unsaved/unwanted files are present
             print('cleaning wallpapers')
             for file in os.listdir(namedPath):
-                pp = [file==rName.split('\\').pop() for rName in self.resourceDict['wallpapers']]
+                pp = [file==rName.replace('/', '\\').split('\\').pop() for rName in self.resourceDict['wallpapers']]
                 if pp.count(True) == 0 and file.split('\\').pop().split('.').pop() in WALL_FILE_TYPES:
                     os.remove(os.path.join(namedPath, file))
 
@@ -143,8 +146,9 @@ class Pack:
             for media in MEDIA_TYPES:
                 print('cleaning', media)
                 for file in os.listdir(os.path.join(namedPath, media)):
-                    pp = [file==rName.split('\\').pop() for rName in self.resourceDict[media]]
+                    pp = [file==rName.replace('/', '\\').split('\\').pop() for rName in self.resourceDict[media]]
                     if pp.count(True) == 0:
+                        print('removing', os.path.join(namedPath, media, file))
                         os.remove(os.path.join(namedPath, media, file))
 
             self.name = name
@@ -223,18 +227,23 @@ def showWindow() -> str:
     fileMenu.add_command(label='Save (Ctrl+S)', command=lambda:save())
 
     def save() -> bool:
+        global hasBeenSaved
         if not hasBeenSaved:
             return saveAs()
-        return pack.export(heldSavePath, '')
+        result = pack.export(heldSavePath, '')
+        if result:
+            hasBeenSaved = True
+        return result 
 
     fileMenu.add_command(label='Save As (Ctrl+Shift+S)', command=lambda:saveAs())
 
     def saveAs() -> bool:
-        global heldSavePath
+        global heldSavePath, hasBeenSaved
         openDir = filedialog.askdirectory(title='Save Pack Folder As').replace('/', '\\')
         print(openDir)
         if not openDir == '' and not openDir == None:
             heldSavePath = openDir
+            hasBeenSaved = True
             return pack.export(openDir, '')
         else:
             return False
@@ -262,7 +271,7 @@ def showWindow() -> str:
     root.bind('<Control-n>', lambda key: menuNew(False))
     root.bind('<Control-s>', lambda key: save())
     root.bind('<Control-Shift-S>', lambda key: saveAs())
-    root.bind('<Control-o>', lambda key: menuOpen())
+    root.bind('<Control-o>', lambda key: menuOpen('manual_select'))
 
     tabMaster       = ttk.Notebook(root)
     tabGeneral      = ttk.Frame(None)
